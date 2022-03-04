@@ -1,0 +1,55 @@
+################
+### Services ###
+################
+
+# delete logs
+
+/bin/cat /dev/null > /lib/systemd/system/del-logs.service
+/bin/cat <<delete_logs >> /lib/systemd/system/del-logs.service
+[Unit]
+Description=delete logs every 24 hours
+After=smbdirs.service
+
+[Service]
+Type=simple        
+ExecStart=/sbin/del-logs
+
+[Install]
+WantedBy=multi-user.target 
+
+delete_logs
+
+# fake-hwclock1h
+
+/bin/cat /dev/null > /lib/systemd/system/fake-hwclock1h.service
+/bin/cat <<fake_hwclock1h >> /lib/systemd/system/fake-hwclock1h.service
+[Unit]
+Description=write hardware clock every hour
+Wants=network.target local-fs.target
+After=network.target local-fs.target
+
+[Service]
+Type=simple        
+ExecStart=/sbin/fake-hwclock1h
+
+[Install]
+WantedBy=multi-user.target 
+
+fake_hwclock1h
+
+# mount rootfs in read only
+
+/bin/cat /dev/null > /lib/systemd/system/smbdirs.service
+/bin/cat <<smbdirs_service >> /lib/systemd/system/smbdirs.service
+[Unit]
+Description=mount smb directories after fstab
+After=local-fs.target
+
+[Service]
+Type=simple        
+ExecStart=/sbin/ramdisk-ro
+
+[Install]
+WantedBy=multi-user.target 
+
+smbdirs_service

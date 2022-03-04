@@ -1,0 +1,25 @@
+###############
+### Main OS ###
+###############
+
+RPIUSER=pi
+PASSWORD=root
+SMBUSER=maximilien
+HOSTNAME_RPI=a404dded
+
+###########
+### IMG ###
+###########
+
+WRKDIR=$(pwd)/rpi-sources/
+OUTPUT_IMG_DIR=$(pwd)/images
+MNTRAMDISK=/mnt/ramdisk/
+MNTROOTFS=/mnt/rpi-rootfs/
+MNTBOOT=${MNTROOTFS}boot/
+TMP_DIR=/tmp/Debian_Rpi
+Keyring="/usr/share/keyrings/debian-archive-stretch-stable.gpg"
+Apt_source="http://cdn-fastly.deb.debian.org/debian/"
+Threads=$(lscpu | grep -oP '(Thread)'.* | awk '{print $4}')
+Procs=$(nproc)
+JOBS=$(echo $(($Threads*$Procs)))
+

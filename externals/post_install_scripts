@@ -1,0 +1,221 @@
+#!/bin/bash
+
+source /tmp/Debian_Rpi/exported-variables
+mkdir -p /home/$(id -nu 1000)/{configs,scripts}
+
+/bin/cat /dev/null >> /home/$(id -nu 1000)/configs/fstab_external_disk
+/bin/cat <<fstab_post_bind_step >> /home/$(id -nu 1000)/configs/fstab_external_disk
+
+##############
+## smb disk ##
+##############
+
+UUID=       /srv   none  ro,noatime,nodiratime     0       0
+
+fstab_post_bind_step
+
+/bin/cat /dev/null >> /home/$(id -nu 1000)/configs/smb_post_conf
+/bin/cat <<smb_user_config >> /home/$(id -nu 1000)/configs/smb_post_conf
+
+[${SMBUSER}]
+  path = /srv
+  guest ok = no
+  restrict anonymous = 2
+  usershare allow guests = no
+  map to guest = never
+  auth methods = sam
+  valid users = ${SMBUSER}
+  writable = yes
+  public = no
+  read only = no
+  create mask = 0660 
+  directory mask = 0750
+smb_user_config
+
+/bin/cat /dev/null >> /home/$(id -nu 1000)/scripts/1-installing-external-disk
+/bin/cat <<external_disk >> /home/$(id -nu 1000)/scripts/1-installing-external-disk
+#!/bin/bash
+
+if [[ "\$(id -u)" -ne 0 ]];then
+
+    echo "You are not root"
+
+else
+
+    D_ID=\$(lsblk -e7 -e1 -e179 -fs -nd -o UUID)
+    F_SYS=\$(lsblk -e7 -e1 -e179 -fs -nd -o FSTYPE)
+
+    if [[ -n \${D_ID} || -n \${F_SYS} ]];then
+
+        echo -en "\ninstalling the external disk\n\n"
+
+        fstab_before="UUID=       /srv   none  ro,noatime,nodiratime     0       0"
+        fstab_after="UUID="\${D_ID}"     /srv    \${F_SYS}  ro,noatime,nodiratime     0       0"
+
+        sed -e '\$r /home/'\$(id -nu 1000)'/configs/fstab_external_disk' -i /etc/fstab 
+        sed -e "s|\${fstab_before}|\${fstab_after}|" -i /etc/fstab 
+
+        echo -en "\nWe have to restart\n\n"
+        rm -- "\$0"
+        shutdown -r 0
+
+    else
+
+        echo "the external disk isn't plugged"
+
+    fi
+
+fi
+
+external_disk
+
+/bin/cat /dev/null >> /home/$(id -nu 1000)/scripts/2-smb-server
+/bin/cat <<smb-server >> /home/$(id -nu 1000)/scripts/2-smb-server
+#!/bin/bash
+
+id_used(){
+
+    local id_checking=\$1
+    if id \$id_checking &>/dev/null; then
+        echo 1
+    else
+        echo 0
+    fi
+
+}
+
+if [[ "\$(id -u)" -ne 0 ]];then
+
+    echo "You are not root"
+
+else
+
+    UUID=\$(lsblk -e7 -e1 -e179 -fs -nd -o UUID)
+
+    if [[ -n \$(grep -oP "(\$UUID)" /etc/fstab) ]];then
+
+        user_id=0
+        until [[ \$(id_used \$user_id) -ne 1 ]];do
+
+            user_id=\$(shuf -i 20000-65000 -n 1)
+
+        done
+
+        echo -en "\nadding the samba user \"${SMBUSER}\"\n"
+        /usr/sbin/useradd --uid \${user_id} --no-create-home --shell /usr/sbin/nologin ${SMBUSER}
+        /usr/bin/smbpasswd -a ${SMBUSER}
+        sed -e '/#======================= Share Definitions =======================/,\${//!d}' -i /etc/samba/smb.conf
+        sed -e 's/usershare allow guests = yes//g' -i /etc/samba/smb.conf  
+        sed -e '\$r /home/'\$(id -nu 1000)'/configs/smb_post_conf' -i /etc/samba/smb.conf
+        echo
+
+        mount -o rw,remount /srv
+        chown -R \$(id -nu \${user_id}):\$(id -nu \${user_id}) /srv
+        chmod 0750 /srv
+        mount -o ro,remount /srv
+
+        services=("nmbd" "smbd")
+        for service in "\${services[@]}"
+        do
+
+            systemctl disable \${service}.service
+            echo
+            systemctl enable \${service}.service
+            echo
+
+        done
+
+        echo -en "\nWe have to restart\n\n"
+        rm  -rf /home/\$(id -nu 1000)/configs
+        rm -- "\$0"
+        shutdown -r 0
+
+    else
+
+        echo "the external disk isn't plugged"
+
+    fi
+
+fi
+
+smb-server
+
+/bin/cat /dev/null >> /home/$(id -nu 1000)/scripts/3-last-configs
+/bin/cat <<last-configs >> /home/$(id -nu 1000)/scripts/3-last-configs
+#!/bin/bash
+
+if [[ "\$(id -u)" -ne 0 ]];then
+
+    echo "You are not root"
+
+else
+
+    SMB_DIR=\$(awk '/\133${SMBUSER}\135/' /etc/samba/smb.conf)
+    SMB_USR=\$(awk '/\40valid\40users\40\75\40${SMBUSER}/' /etc/samba/smb.conf)
+    SMB_MNT=\$(awk '/\40path\40\75\40\57srv/' /etc/samba/smb.conf) 
+
+    if [[ -n \${SMB_DIR} && -n \${SMB_USR} && -n \${SMB_MNT} ]];then
+
+        UUID=\$(lsblk -e7 -e1 -e179 -fs -nd -o UUID)
+
+        if [[ -n \$(grep -oP "(\$UUID)" /etc/fstab) ]];then
+
+            systemctl enable del-logs.service
+            systemctl enable del-logs.timer
+            echo 
+
+            logs=\$(find /var/log -type f)
+            for i in \$logs
+            do
+	            > \$i
+            done
+
+            apt clean -y -qq -o=Dpkg::Use-Pty=0 >/dev/null 2>&1
+            apt autoclean -y -qq -o=Dpkg::Use-Pty=0 >/dev/null 2>&1
+            apt autoremove -y -qq -o=Dpkg::Use-Pty=0 >/dev/null 2>&1
+            rm -rf /home/\$(id -nu 1000)/.bash_history
+            touch /home/\$(id -nu 1000)/.bash_history
+
+            directories=("etc" "home/\$(id -nu 1000)" "var/cache" "var/lib" "var/log")
+            for dirs in "\${directories[@]}"
+            do
+
+                echo "Saving the directory /\${dirs}."
+                rsync -aXS /\${dirs}/. /media/saves/\${dirs}/.
+            
+            done
+
+            systemctl enable smbdirs.service
+        
+            echo -en "\nWe have to restart\n\n"
+            rm -rf /media/saves/home/\$(id -nu 1000)/*
+            rm -- "\$0"
+            shutdown -r 0
+        
+        else
+
+            echo "The UUID doesn't match with the fstab"
+
+        fi
+
+    else
+
+        echo "the external disk isn't plugged or the samba isn't right"
+
+    fi
+
+fi
+
+last-configs
+
+scripts=$(find /home/$(id -nu 1000)/scripts -type f)
+for script in $scripts
+do
+
+	chmod +x ${script}
+    chown $(id -nu 1000):$(id -nu 1000) ${script}
+    mv ${script} /home/$(id -nu 1000)
+
+done
+
+rmdir /home/$(id -nu 1000)/scripts

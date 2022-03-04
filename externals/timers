@@ -1,0 +1,35 @@
+##############
+### Timers ###
+##############
+
+# Fake HW clock
+
+/bin/cat /dev/null > /lib/systemd/system/fake-hwclock1h.timer
+/bin/cat <<fake_hwclock1h_timer >> /lib/systemd/system/fake-hwclock1h.timer
+[Unit]
+Description=write hardware clock every hour
+
+[Timer]
+OnBootSec=0min
+OnUnitActiveSec=1h
+
+[Install]
+WantedBy=multi-user.target fake-hwclock1h.service
+
+fake_hwclock1h_timer
+
+# Trim logs
+
+/bin/cat /dev/null > /lib/systemd/system/del-logs.timer
+/bin/cat <<delete_logs_timer >> /lib/systemd/system/del-logs.timer
+[Unit]
+Description=delete logs every 24 hours
+
+[Timer]
+OnBootSec=0min
+OnUnitActiveSec=24h
+
+[Install]
+WantedBy=multi-user.target del-logs.service
+
+delete_logs_timer

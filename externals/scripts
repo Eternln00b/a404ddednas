@@ -1,0 +1,261 @@
+###############
+### Scripts ###
+###############
+
+/bin/cat /dev/null > /sbin/del-logs
+/bin/cat <<delete_logs >> /sbin/del-logs
+#!/bin/bash
+
+logs=\$(find /var/log -type f)
+for i in \$logs
+do
+
+    > \$i
+
+done
+
+delete_logs
+
+# /sbin/fake-hwclock1h
+
+rm -rf /etc/cron.hourly/fake-hwclock
+/bin/cat /dev/null > /sbin/fake-hwclock1h
+/bin/cat <<fake_hwclock >> /sbin/fake-hwclock1h
+#!/bin/bash
+
+###########################
+## Fake hwclock file gen ##
+###########################
+
+if [[ \$(id -u) -ne 0 ]];then
+
+	echo "only root can save the clock"
+
+else
+
+	if [[ ! -w / && \$( awk '/mnt\57os/ && /tmpfs/' /proc/mounts ) ]]; then
+	
+		if [[ \$( awk -v dir=etc '/overlay/ && \$0 ~ dir ' /proc/mounts ) ]];then
+		
+			mount -o rw,remount /
+			mount --rbind /media/saves/etc 	/etc
+			/sbin/fake-hwclock save
+			umount /etc
+        	mount -o ro,remount /
+
+		else
+
+			mount -o rw,remount / 
+			/sbin/fake-hwclock save
+			mount -o ro,remount / 
+
+		fi
+
+	else
+
+		/sbin/fake-hwclock save
+
+	fi
+
+fi
+
+fake_hwclock
+
+# /sbin/ramdisk-ro
+
+/bin/cat /dev/null > /sbin/ramdisk-ro
+/bin/cat <<ramdisk-mkdir >> /sbin/ramdisk-ro
+#!/bin/bash
+
+check_env () {
+
+local dirs=0
+local directories=("etc" "home/\$(id -nu 1000)" "var/cache" "var/lib" "var/log")
+for directory in "\${directories[@]}"
+do
+
+	[[ -d /\${directory} ]] && dirs=\$(( \$dirs + 1 ))
+	[[ -d /media/saves/\${directory} ]] && dirs=\$(( \$dirs + 1 ))
+
+done
+return \$dirs
+
+}
+
+if [[ \$(id -u) -eq 0 && -w / ]];then 
+
+	DMNT=\$( lsblk -e7 -e1 -e179 -fs -nd -o MOUNTPOINT | awk '/srv/' )
+
+	if [[ -n "\${DMNT}" && \$(check_env; echo \$?) -eq 10 ]];then 
+
+		directories=("etc" "home/\$(id -nu 1000)" "var/cache" "var/lib" "var/log")
+		for directory in "\${directories[@]}"
+		do
+
+			if [[ \$( awk -v dir=\${directory} '/overlay/ && \$0 ~ dir ' /proc/mounts ) ]];then 
+
+				echo -en "/\${directory} is already mounted ...\n"
+
+			else
+
+				lowerdir=/media/saves/\${directory}
+				upperdir=/mnt/os/upperdir/\${directory}
+				workdir=/mnt/os/workdir/\${directory}
+    			mkdir -p /mnt/os/{upperdir,workdir}/\${directory} 
+				mount -t overlay overlay -o rw,lowerdir=\${lowerdir},upperdir=\${upperdir},workdir=\${workdir}	/\${directory}
+
+			fi
+
+		done
+
+		[[ -n \$(awk -v mnt=\${DMNT} '\$0 ~ mnt && /rw/' /proc/mounts) ]] && mount -o ro,remount /srv
+		mount -o ro,remount /
+
+	else
+
+		echo "the external disk isn't plugged or a directory is missing"
+
+	fi
+
+else
+
+	echo "you are not root or the rootfs is in read only"
+
+fi
+
+ramdisk-mkdir
+
+# /home/$(id -nu 1000)/.bashrc
+
+/bin/cat /dev/null > /bin/savechanges
+/bin/cat <<savechanges >> /bin/savechanges
+#!/bin/bash
+
+rmntdir() {
+
+	local dir=\$1
+	[[ -n \$( awk -v dir="\${dir}" '\$0 ~ dir ' /proc/mounts ) ]] && mount --rbind /media/saves/\${dir}   /\${dir}
+
+}
+
+if [[ \$(id -u) -ne 0 ]];then
+
+    echo "run this script as sudo"
+
+else
+
+    directories=("etc" "home/\$(id -nu 1000)" "var/cache" "var/lib")
+    if [[ ! -w / ]]; then
+
+    	if [[ -n \$(awk '/mnt\57os/' /proc/mounts) ]];then
+
+        	mount -o rw,remount /
+            systemctl restart fake-hwclock1h.service
+            for dir in "\${directories[@]}"
+            do
+            	rmntdir \$dir
+            done
+
+        else
+
+        	echo "check the file /etc/fstab"
+			exit 1
+
+        fi
+
+    fi
+
+    su - pi
+
+	for dir in "\${directories[@]}"
+    do
+    	umount -l "/\${dir}"
+    done 
+    mount -o ro,remount /
+
+fi
+
+savechanges
+
+# experimental
+
+/bin/cat /dev/null > /sbin/remount-storage
+/bin/cat <<remount-storage >> /sbin/remount-storage
+#!/bin/bash
+
+finish() {
+
+	[[ -f \${lockpid} ]] && rm -rf \${lockpid}
+	# [[ -z \$( ip route | grep -oP '(default)'.* ) ]] && echo "no network" 
+	[[ -z \$(lsblk -e7 -e1 -e179 -fs -nd -o MOUNTPOINT | awk '/srv/') ]] && echo "no disk" 
+
+}
+
+check_running() {
+
+    local file=\$1 pid pids 
+
+    [[ ! -f \${file} ]] && touch \${file}
+
+    exec 9>>"\$file"
+    { pids=\$(fuser -f "\${file}"); } 2>&- 9>&- 
+    for pid in \${pids}
+    do
+    	if [[ \${pid} = \$\$ ]];then 
+			continue
+		else
+			exec 9>&- 
+			if [[ -z \$(awk -v lockpidfile=\${file} 'BEGIN{file=lockpidfile;while ((getline<file) > 0) {print}}') ]];then 
+				echo \$\$ >> \${file}   
+        		cat \${file} | tr -d " \t\n\r" 
+			else
+				echo \$\$ 		
+			fi
+			break
+		fi      
+    done 
+
+}
+
+if [[ \$(id -u) -ne 0  ]];then
+
+	echo "you are not root"
+	exit 1
+
+else
+
+	lockpid=/var/run/samba_live_mount.pid
+	
+	pid_return=\$( check_running \${lockpid} )
+
+	if [[ \$( echo \${pid_return} ) -ne \$( awk -v lockpidfile=\${lockpid} 'BEGIN{file=lockpidfile;while ((getline<file) > 0) {print}}') ]];then 
+	
+		echo "Already running"
+		exit 1
+		
+	else
+
+		trap finish EXIT
+
+		while [[ -n \$( ip route | grep -oP '(default)'.* ) && -n \$(lsblk -e7 -e1 -e179 -fs -nd -o MOUNTPOINT | awk '/srv/') ]] 
+		do
+
+			[[ ! -f \${lockpid} ]] && echo \${pid_return} >> \${lockpid}
+							
+			if [[ \$(ss -t4 state established -nt '( dst :139 or dst :445 )') && \$( /usr/bin/smbstatus -p | awk '/partial/' ) ]];then
+					
+				[[ \$( awk '/\57srv/ && /ro/' /proc/mounts ) ]] && mount -o rw,remount /srv
+					
+			else
+						
+				[[ \$( awk '/\57srv/ && /rw/' /proc/mounts ) ]] && mount -o ro,remount /srv
+						
+			fi
+				
+		done
+	
+	fi
+
+fi
+
+remount-storage

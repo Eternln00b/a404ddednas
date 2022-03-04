@@ -1,0 +1,290 @@
+#!/bin/bash
+
+OS_ARCH=$(uname -p)
+
+##########################################################
+### Packages & Settings ##################################
+##########################################################
+
+################
+### Packages ###
+################
+
+if [[ "$(id -u)" -ne 0 || ${OS_ARCH} == "x86_64" && "$(stat -c %d:%i /)" == "$(stat -c %d:%i /proc/1/root/.)" ]]; then
+
+	echo "you are not in the chroot !"
+	exit 0
+
+fi
+
+swapoff -a
+touch /etc/apt/sources.list
+source /tmp/Debian_Rpi/exported-variables
+
+/bin/cat /dev/null > /etc/apt/sources.list
+/bin/cat <<etc_apt_sources_list >> /etc/apt/sources.list
+deb http://cdn-fastly.deb.debian.org/debian stretch main contrib non-free
+deb-src http://cdn-fastly.deb.debian.org/debian stretch main contrib non-free
+
+etc_apt_sources_list
+
+list_to_install="bash-completion build-essential crda dhcpcd5 dnsutils fake-hwclock git ifupdown iproute2 iputils-ping 
+isc-dhcp-client isc-dhcp-common iw kmod libnl-3-200 libnl-genl-3-200 libnl-route-3-200 libssl-dev lsb-base lsb-release 
+nano neofetch netbase ntp openssh-server perl psmisc python rsync samba samba-common-bin sudo tar tcpd udev ufw unzip
+usbutils util-linux wget"
+
+echo -en "\nOS update" 		     	
+apt -y update >/dev/null 2>&1
+echo -en "\nPre-settings before the packages installation ...\n\n"
+apt -y remove --purge -qq -o=Dpkg::Use-Pty=0 rsyslog >/dev/null 2>&1
+apt -y install --no-install-recommends -qq -o=Dpkg::Use-Pty=0 busybox-syslogd >/dev/null 2>&1
+apt -y install --no-install-recommends -qq -o=Dpkg::Use-Pty=0 locales tzdata >/dev/null 2>&1
+echo "Etc/Universal" >/etc/timezone
+dpkg-reconfigure locales 2>/dev/null
+dpkg-reconfigure -f noninteractive tzdata 2>/dev/null
+apt -y install --no-install-recommends -qq -o=Dpkg::Use-Pty=0 console-common console-data console-setup-linux console-setup 2>/dev/null
+apt -y install --reinstall -qq -o=Dpkg::Use-Pty=0 dbus >/dev/null 2>&1
+echo -en "\nPackages installation for the OS and update ...\n\n"
+apt -y install --no-install-recommends -qq -o=Dpkg::Use-Pty=0 ${list_to_install} >/dev/null 2>&1
+apt -y upgrade -qq -o=Dpkg::Use-Pty=0 >/dev/null 2>&1
+
+echo -en "adding the ssh user \"${RPIUSER}\"\n"
+useradd -s /bin/bash -G sudo,adm,netdev,www-data -m ${RPIUSER}
+echo "${RPIUSER}:${PASSWORD}" | chpasswd
+
+sed -i 's/#force_color_prompt=yes/force_color_prompt=yes/g' /home/$(id -nu 1000)/.bashrc
+
+/bin/cat /dev/null > /home/$(id -nu 1000)/.msg
+/bin/cat <<msg >> /home/$(id -nu 1000)/.msg
+- sudo bash -c "nohup $(echo -en "\033[01;31mremount-storage\033[00m") </dev/null >/dev/null 2>&1 &"
+
+msg
+
+/bin/cat /dev/null > /tmp/bashrc
+/bin/cat <<bashrc >> /tmp/bashrc
+if [[ -n \$(awk '/dev\57root/ && /rw/' /proc/mounts) ]];then
+
+	PS1="[\e[0;91mrw\e[m][\e[0;92m\u@\h\e[m]:\e[36m\w\e[m\$ "
+	echo && neofetch
+
+else
+
+	DEV=\$(lsblk -e7 -e1 -e179 -fs -nd -o NAME)
+	if [[ -n \$(awk -v dev=\${DEV} '\$0 ~ dev && /ro/' /proc/mounts) && -z \$(pgrep remount-storage) ]];then
+
+        echo && neofetch
+        echo -en "[!] You have to run this command, otherwise no access to the smb disk :\n" && cat .msg 
+
+	else
+
+        echo && neofetch
+        echo -en "run the command \033[01;31msavechanges\033[00m as sudo and reboot if you have to save your changes.\n\n"
+
+	fi
+
+fi
+
+bashrc
+
+sed -e '$r /tmp/bashrc' -i /home/$(id -nu 1000)/.bashrc
+
+echo -en "\ndisabling the root login\n"
+passwd -l root
+sed -i -e "s|root:x:0:0:root:/root:/bin/bash|root:x:0:0:root:/root:/usr/sbin/nologin|" /etc/passwd
+
+echo 
+
+################
+### Settings ###
+################
+
+[[ -d /lib/firmware ]] && rm -rf /lib/firmware
+mkdir -p /etc/network /lib/firmware /mnt/{logs,os}
+mkdir -p /media/saves/{etc,home/$(id -nu 1000),var/cache,var/lib,var/log}
+
+# /etc/hostname
+rm -rf /etc/{hostname,hosts}
+echo ${HOSTNAME_RPI} >> /etc/hostname
+
+# /etc/hosts
+
+/bin/cat /dev/null > /etc/hosts
+/bin/cat <<hosts >> /etc/hosts
+::1 		localhost localhost.localdomain ${HOSTNAME_RPI}.localdomain
+127.0.0.1 	localhost localhost.localdomain ${HOSTNAME_RPI}.localdomain
+127.0.1.1	${HOSTNAME_RPI}
+
+# The following lines are desirable for IPv6 capable hosts
+::1			ip6-localhost ip6-loopback
+fe00::0		ip6-localnet
+ff00::0		ip6-mcastprefix
+ff02::1		ip6-allnodes
+ff02::2		ip6-allrouters
+
+hosts
+
+# Don't wait forever and a day for the network to come online
+if [ -s /lib/systemd/system/networking.service ]; then
+
+	sed -i -e "s/TimeoutStartSec=5min/TimeoutStartSec=5sec/" /lib/systemd/system/networking.service
+
+fi
+
+if [ -s /lib/systemd/system/ifup@.service ]; then
+
+	echo "TimeoutStopSec=5s" >> /lib/systemd/system/ifup@.service
+
+fi
+
+# /etc/fstab
+
+/bin/cat /dev/null > /etc/fstab
+/bin/cat <<etc_fstab >> /etc/fstab
+########
+## OS ##
+########
+
+proc				/proc       proc    defaults                        0       0
+/dev/mmcblk0p1  	/boot       vfat    defaults,ro                     0       2
+/dev/mmcblk0p2  	/           ext4    defaults,nodiratime,noatime     0       1
+
+################
+### squashfs ###
+################
+
+/boot/firmware.sqfs          /lib/firmware           squashfs        loop    0       0
+
+############
+### /tmp ###
+############
+
+tmpfs     /tmp        tmpfs   nodiratime,noatime,nodev,nosuid,size=8M     0       0
+
+############
+### /mnt ###
+############
+
+tmpfs	  /mnt/os	  tmpfs	  nodiratime,noatime,nodev,nosuid,size=512M	  0       0
+
+etc_fstab
+
+# /etc/journald.conf 
+
+/bin/cat /dev/null > /etc/systemd/journald.conf
+/bin/cat <<journald_conf >> /etc/systemd/journald.conf
+[Journal]
+Storage=volatile
+Compress=yes
+
+journald_conf
+
+# /etc/interfaces 
+
+/bin/cat /dev/null > /etc/network/interfaces
+/bin/cat <<etc_network_interfaces >> /etc/network/interfaces
+source-directory /etc/network/interfaces.d
+
+etc_network_interfaces
+chmod 0600 /etc/network/interfaces
+
+[[ $(grep "IPV6" /etc/default/ufw | awk '{gsub(/#/,"");gsub(/ /,"")}1') ]] && sed '/IPV6=yes/s/^#//;/IPV6=yes/s/[[:space:]]//g' -i /etc/default/ufw  
+[[ -z $(grep "IPV6" /etc/default/ufw) ]] && echo "IPV6=yes" >> /etc/default/ufw
+
+sed -e '/quickly process packets/s/^#/ /g;/quickly process packets/,+3 s/^/# /' -i /etc/ufw/before.rules
+sed -e 's/#   quickly process packets/# quickly process packets/' -i /etc/ufw/before.rules
+
+ufw logging off
+ufw default deny incoming
+ufw allow 22
+ufw allow 139
+ufw allow 445
+
+systemctl enable sshd.service 
+systemctl disable smbd.service
+
+systemctl disable cron
+systemctl mask cron
+
+# /boot 
+
+KERNEL=
+CMDLINE="dwc_otg.lpm_enable=0 console=ttyAMA0,115200 console=tty1 root=/dev/mmcblk0p2 rootfstype=ext4 cgroup_enable=memory elevator=deadline rootwait\n"
+
+echo -en "${CMDLINE}" >> /boot/cmdline.txt
+echo -en "kernel=${KERNEL}.img\nenable_uart=1\n" >> /boot/config.txt
+echo 
+
+##########################################################
+### Custom ###############################################
+##########################################################
+
+###############
+### Scripts ###
+###############
+
+source /tmp/Debian_Rpi/externals/scripts
+
+scripts=("/bin/savechanges" "/sbin/del-logs" "/sbin/fake-hwclock1h" "/sbin/ramdisk-ro" "/sbin/remount-storage")
+
+for script in "${scripts[@]}"
+do
+
+	echo "enabling the script:${script}"
+	chmod 0755 ${script}
+
+done
+echo
+
+################
+### Services ###
+################
+
+source /tmp/Debian_Rpi/externals/services
+
+services=("del-logs" "fake-hwclock1h" "smbdirs")
+
+for service in "${services[@]}"
+do
+
+	echo "installing the service:${service}"
+	ln -s /lib/systemd/system/${service}.service /etc/systemd/system/${service}.service
+	chmod 0644 /lib/systemd/system/${service}.service
+	[[ ${service} == "fake-hwclock1h" ]] && systemctl enable ${service}.service
+
+done
+echo
+
+##############
+### Timers ###
+##############
+
+source /tmp/Debian_Rpi/externals/timers
+
+timers=("del-logs" "fake-hwclock1h")
+
+for timer in "${timers[@]}"
+do
+
+	echo "installing the timer:${timer}"
+	ln -s /lib/systemd/system/${timer}.timer /etc/systemd/system/${timer}.timer
+	chmod 0644 /lib/systemd/system/${timer}.timer
+	[[ ${timer} == "fake-hwclock1h" ]] && systemctl enable ${timer}.timer
+
+done
+echo
+
+##########################################################
+## cleaning environment ##################################
+##########################################################
+
+logs=$(find /var/log -type f)
+for i in $logs
+do
+	> $i
+done
+
+apt clean -y -qq -o=Dpkg::Use-Pty=0 >/dev/null 2>&1
+apt autoclean -y -qq -o=Dpkg::Use-Pty=0 >/dev/null 2>&1
+apt autoremove -y -qq -o=Dpkg::Use-Pty=0 >/dev/null 2>&1
+rm -rf /home/$(id -nu 1000)/.bash_history
+touch /home/$(id -nu 1000)/.bash_history
