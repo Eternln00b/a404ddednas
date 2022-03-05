@@ -280,7 +280,7 @@ pre_kernel_compile() {
 			rm -rf ${kernel_config}
 			cd ${WRKDIR}raspberrypi/linux
 			make -j${JOBS} mrproper &> /dev/null
-	    	make -j${JOBS} distclean &> /dev/null
+	    		make -j${JOBS} distclean &> /dev/null
 			make -j${JOBS} clean &> /dev/null
 			mv ${kernel_config_tmp}	${kernel_config}
 
@@ -486,10 +486,10 @@ if [[ -n $KERNEL ]];then
 
 	echo -en "\nInstalling the kernel ...\n\n"
 	cp ${WRKDIR}raspberrypi/linux/arch/${KARCH}/boot/${KERNEL_IMG} ${MNTBOOT}${KERNEL}.img
-    [[ ${KARCH} == "arm" ]] && cp ${WRKDIR}raspberrypi/linux/arch/${KARCH}/boot/dts/*.dtb ${MNTBOOT}
+    	[[ ${KARCH} == "arm" ]] && cp ${WRKDIR}raspberrypi/linux/arch/${KARCH}/boot/dts/*.dtb ${MNTBOOT}
 	[[ ${KARCH} == "arm64" ]] && cp ${WRKDIR}raspberrypi/linux/arch/${KARCH}/boot/dts/broadcom/*.dtb ${MNTBOOT}
-    cd ${WRKDIR}raspberrypi/linux
-    make ARCH=${KARCH} CROSS_COMPILE=${CROSS_COMPILER} INSTALL_MOD_PATH=${MNTROOTFS} modules_install -j ${JOBS} &> /dev/null
+    	cd ${WRKDIR}raspberrypi/linux
+    	make ARCH=${KARCH} CROSS_COMPILE=${CROSS_COMPILER} INSTALL_MOD_PATH=${MNTROOTFS} modules_install -j ${JOBS} &> /dev/null
 
 else
 
