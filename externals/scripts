@@ -41,7 +41,7 @@ else
 			mount --rbind /media/saves/etc 	/etc
 			/sbin/fake-hwclock save
 			umount /etc
-        	mount -o ro,remount /
+        		mount -o ro,remount /
 
 		else
 
@@ -101,7 +101,7 @@ if [[ \$(id -u) -eq 0 && -w / ]];then
 				lowerdir=/media/saves/\${directory}
 				upperdir=/mnt/os/upperdir/\${directory}
 				workdir=/mnt/os/workdir/\${directory}
-    			mkdir -p /mnt/os/{upperdir,workdir}/\${directory} 
+    				mkdir -p /mnt/os/{upperdir,workdir}/\${directory} 
 				mount -t overlay overlay -o rw,lowerdir=\${lowerdir},upperdir=\${upperdir},workdir=\${workdir}	/\${directory}
 
 			fi
@@ -149,17 +149,17 @@ else
 
     	if [[ -n \$(awk '/mnt\57os/' /proc/mounts) ]];then
 
-        	mount -o rw,remount /
-            systemctl restart fake-hwclock1h.service
-            for dir in "\${directories[@]}"
-            do
-            	rmntdir \$dir
-            done
+	    	mount -o rw,remount /
+	    	systemctl restart fake-hwclock1h.service
+            	for dir in "\${directories[@]}"
+            	do
+            		rmntdir \$dir
+            	done
 
         else
 
-        	echo "check the file /etc/fstab"
-			exit 1
+		echo "check the file /etc/fstab"
+		exit 1
 
         fi
 
@@ -167,7 +167,7 @@ else
 
     su - pi
 
-	for dir in "\${directories[@]}"
+    for dir in "\${directories[@]}"
     do
     	umount -l "/\${dir}"
     done 
@@ -194,25 +194,27 @@ finish() {
 check_running() {
 
     local file=\$1 pid pids 
-
     [[ ! -f \${file} ]] && touch \${file}
-
     exec 9>>"\$file"
     { pids=\$(fuser -f "\${file}"); } 2>&- 9>&- 
     for pid in \${pids}
     do
     	if [[ \${pid} = \$\$ ]];then 
-			continue
-		else
-			exec 9>&- 
-			if [[ -z \$(awk -v lockpidfile=\${file} 'BEGIN{file=lockpidfile;while ((getline<file) > 0) {print}}') ]];then 
-				echo \$\$ >> \${file}   
+		continue
+	else
+		exec 9>&- 
+		if [[ -z \$(awk -v lockpidfile=\${file} 'BEGIN{file=lockpidfile;while ((getline<file) > 0) {print}}') ]];then 
+		
+			echo \$\$ >> \${file}   
         		cat \${file} | tr -d " \t\n\r" 
-			else
-				echo \$\$ 		
-			fi
-			break
-		fi      
+		
+		else
+		
+			echo \$\$ 		
+		
+		fi
+		break
+	fi      
     done 
 
 }
