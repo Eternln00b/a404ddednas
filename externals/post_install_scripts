@@ -213,8 +213,8 @@ for script in $scripts
 do
 
 	chmod +x ${script}
-    chown $(id -nu 1000):$(id -nu 1000) ${script}
-    mv ${script} /home/$(id -nu 1000)
+    	chown $(id -nu 1000):$(id -nu 1000) ${script}
+    	mv ${script} /home/$(id -nu 1000)
 
 done
 
