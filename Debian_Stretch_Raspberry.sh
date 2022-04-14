@@ -343,7 +343,7 @@ Debian_build() {
 	sed -e "s|KERNEL=|KERNEL=${KERNEL}|" -i ${TMP_DIR}/chroot_scripts/package_debian
 	xterm -geometry 190x180+90-20 -e 'chroot '${MNTROOTFS}' '${TMP_DIR}'/chroot_scripts/package_debian'
 	chroot ${MNTROOTFS} ${TMP_DIR}/externals/post_install_scripts
-	xterm -geometry 210x200+100-10 -e 'chroot '${MNTROOTFS}' /bin/bash'
+	# xterm -geometry 210x200+100-10 -e 'chroot '${MNTROOTFS}' /bin/bash'
 
 }
 
